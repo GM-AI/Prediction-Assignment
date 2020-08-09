@@ -1,0 +1,130 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "GM"
+date: "August 8, 2020"
+output: html_document:
+  keep_md: yes
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Executive summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har.
+
+# Data
+
+Download:
+```{r, message=FALSE}
+
+train_URL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test_URL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+train <- read.csv(url(train_URL),na.strings=c("","NA"))
+test <- read.csv(url(test_URL),na.strings=c("","NA"))
+```
+
+# Exploratory Analysis
+
+Prepare enviroment to be used:
+```{r}
+library(caret) # ML library
+library(parallel) # Paraller processing library to speed up training 
+library(doParallel) # Paraller processing library to speed up training 
+library(tictoc) # Timer to calculate how long it takes to compute code
+```
+
+```{r}
+dim(train)
+```
+160 variables is quite a lot. Lets look at them.
+
+```{r. results="hide"}
+str(train)
+str(test)
+```
+
+A lot of NA and not needed first two columns for model.
+
+Remove index and user column:
+```{r, }
+train<-train[, -c(1:2)]
+test<-test[, -c(1:2)]
+```
+
+Check full cases (all values present in row):
+```{r}
+sum(complete.cases(train))/dim(train)[1]
+sum(complete.cases(test))/dim(test)[1]
+```
+Only about 2% full cases is too small to build model. 
+
+Remove columns with NA and check full cases again:
+```{r}
+zero_sums<-colSums(is.na(train)) == 0
+train <- train[, zero_sums] 
+test <- test[, zero_sums] 
+sum(complete.cases(train))/dim(train)[1]
+dim(train)
+sum(complete.cases(test))/dim(test)[1]
+dim(test)
+```
+Looks like we have 19622 full cases in train and 20 in test.
+
+We are left only with 57 variables.
+
+Split at 80% to training and crossvalidation parts and set seed:
+```{r,cache=TRUE}
+set.seed(56842)
+train_partitioned  <- createDataPartition(train$classe, p=0.8, list=FALSE)
+training_set <- train[train_partitioned, ]
+crossvalidation_set  <- train[-train_partitioned, ]
+```
+
+# Prediction Model
+
+Building random forest prediction model using caret package and turning on parallel proccesing.
+
+Make CPU cluter
+```{r}
+cluster <- makeCluster(detectCores() - 1)
+registerDoParallel(cluster)
+```
+
+Fit model:
+```{r, cache=TRUE}
+tic()
+fitControl  <- trainControl(method = "cv",number = 5,allowParallel = TRUE)
+random_forest_model <- train(classe ~ ., data=training_set, method="rf",trControl=fitControl )
+stopCluster(cluster)
+toc("Time to fit Random Forest")
+```
+
+Look at model:
+```{r}
+random_forest_model$finalModel
+```
+
+```{r}
+random_forest_model$resample
+```
+
+```{r}
+confusionMatrix.train(random_forest_model)
+```
+Model with Accuracy (average) : 0.9992 is realy nice. Lets check with test set:
+
+```{r}
+tic()
+predict_random_forest_model <- predict(random_forest_model, newdata=test)
+predict_random_forest_model
+toc()
+```
+Quiz gives 100%. Nice.
+
+It takes about 0.01 to make prediction using model for one case. 
